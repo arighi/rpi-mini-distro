@@ -1,7 +1,8 @@
 busybox/
-dropbear*
+dropbear-*
 firmware/
 kernel.img
 linux/
-rootfs*
+rootfs/
+rootfs.img
 tools/
