@@ -1,0 +1,303 @@
+diff --git a/drivers/net/usb/smsc95xx.c b/drivers/net/usb/smsc95xx.c
+index 9709314..f9d179e 100644
+--- a/drivers/net/usb/smsc95xx.c
++++ b/drivers/net/usb/smsc95xx.c
+@@ -164,20 +164,19 @@ static int __must_check smsc95xx_write_reg(struct usbnet *dev, u32 index,
+ static int __must_check __smsc95xx_phy_wait_not_busy(struct usbnet *dev,
+ 						     int in_pm)
+ {
+-	unsigned long start_time = jiffies;
++	ktime_t start = ktime_get();
+ 	u32 val;
+ 	int ret;
+ 
+-	do {
++	while (ktime_us_delta(ktime_get(), start) < 10000) {
+ 		ret = __smsc95xx_read_reg(dev, MII_ADDR, &val, in_pm);
+ 		if (ret < 0) {
+ 			netdev_warn(dev->net, "Error reading MII_ACCESS\n");
+ 			return ret;
+ 		}
+-
+ 		if (!(val & MII_BUSY_))
+ 			return 0;
+-	} while (!time_after(jiffies, start_time + HZ));
++	}
+ 
+ 	return -EIO;
+ }
+@@ -295,7 +294,7 @@ static void smsc95xx_mdio_write(struct net_device *netdev, int phy_id, int idx,
+ 
+ static int __must_check smsc95xx_wait_eeprom(struct usbnet *dev)
+ {
+-	unsigned long start_time = jiffies;
++	unsigned long timeout = 0;
+ 	u32 val;
+ 	int ret;
+ 
+@@ -308,8 +307,9 @@ static int __must_check smsc95xx_wait_eeprom(struct usbnet *dev)
+ 
+ 		if (!(val & E2P_CMD_BUSY_) || (val & E2P_CMD_TIMEOUT_))
+ 			break;
+-		udelay(40);
+-	} while (!time_after(jiffies, start_time + HZ));
++		usleep_range(10, 20);
++		timeout += 10;
++	} while (timeout < USEC_PER_MSEC * 10);
+ 
+ 	if (val & (E2P_CMD_TIMEOUT_ | E2P_CMD_BUSY_)) {
+ 		netdev_warn(dev->net, "EEPROM read operation timeout\n");
+@@ -321,7 +321,7 @@ static int __must_check smsc95xx_wait_eeprom(struct usbnet *dev)
+ 
+ static int __must_check smsc95xx_eeprom_confirm_not_busy(struct usbnet *dev)
+ {
+-	unsigned long start_time = jiffies;
++	unsigned long timeout = 0;
+ 	u32 val;
+ 	int ret;
+ 
+@@ -334,9 +334,9 @@ static int __must_check smsc95xx_eeprom_confirm_not_busy(struct usbnet *dev)
+ 
+ 		if (!(val & E2P_CMD_BUSY_))
+ 			return 0;
+-
+-		udelay(40);
+-	} while (!time_after(jiffies, start_time + HZ));
++		usleep_range(10, 20);
++		timeout += 20;
++	} while (timeout < USEC_PER_MSEC * 10);
+ 
+ 	netdev_warn(dev->net, "EEPROM is busy\n");
+ 	return -EIO;
+@@ -887,7 +887,8 @@ static int smsc95xx_start_rx_path(struct usbnet *dev, int in_pm)
+ 
+ static int smsc95xx_phy_initialize(struct usbnet *dev)
+ {
+-	int bmcr, ret, timeout = 0;
++	unsigned long timeout = 0;
++	int bmcr, ret;
+ 
+ 	/* Initialize MII structure */
+ 	dev->mii.dev = dev->net;
+@@ -901,12 +902,12 @@ static int smsc95xx_phy_initialize(struct usbnet *dev)
+ 	smsc95xx_mdio_write(dev->net, dev->mii.phy_id, MII_BMCR, BMCR_RESET);
+ 
+ 	do {
+-		msleep(10);
++		usleep_range(10, 20);
++		timeout += 10;
+ 		bmcr = smsc95xx_mdio_read(dev->net, dev->mii.phy_id, MII_BMCR);
+-		timeout++;
+-	} while ((bmcr & BMCR_RESET) && (timeout < 100));
++	} while ((bmcr & BMCR_RESET) && (timeout < USEC_PER_SEC));
+ 
+-	if (timeout >= 100) {
++	if (timeout >= USEC_PER_SEC) {
+ 		netdev_warn(dev->net, "timeout on PHY Reset");
+ 		return -EIO;
+ 	}
+@@ -934,7 +935,8 @@ static int smsc95xx_reset(struct usbnet *dev)
+ {
+ 	struct smsc95xx_priv *pdata = (struct smsc95xx_priv *)(dev->data[0]);
+ 	u32 read_buf, write_buf, burst_cap;
+-	int ret = 0, timeout;
++	unsigned long timeout;
++	int ret = 0;
+ 
+ 	netif_dbg(dev, ifup, dev->net, "entering smsc95xx_reset\n");
+ 
+@@ -944,14 +946,14 @@ static int smsc95xx_reset(struct usbnet *dev)
+ 
+ 	timeout = 0;
+ 	do {
+-		msleep(10);
+ 		ret = smsc95xx_read_reg(dev, HW_CFG, &read_buf);
+ 		if (ret < 0)
+ 			return ret;
+-		timeout++;
+-	} while ((read_buf & HW_CFG_LRST_) && (timeout < 100));
++		usleep_range(10, 20);
++		timeout += 10;
++	} while ((read_buf & HW_CFG_LRST_) && (timeout < USEC_PER_SEC));
+ 
+-	if (timeout >= 100) {
++	if (timeout >= USEC_PER_SEC) {
+ 		netdev_warn(dev->net, "timeout waiting for completion of Lite Reset\n");
+ 		return ret;
+ 	}
+@@ -962,14 +964,14 @@ static int smsc95xx_reset(struct usbnet *dev)
+ 
+ 	timeout = 0;
+ 	do {
+-		msleep(10);
+ 		ret = smsc95xx_read_reg(dev, PM_CTRL, &read_buf);
+ 		if (ret < 0)
+ 			return ret;
+-		timeout++;
+-	} while ((read_buf & PM_CTL_PHY_RST_) && (timeout < 100));
++		usleep_range(10, 20);
++		timeout += 10;
++	} while ((read_buf & PM_CTL_PHY_RST_) && (timeout < USEC_PER_SEC));
+ 
+-	if (timeout >= 100) {
++	if (timeout >= USEC_PER_SEC) {
+ 		netdev_warn(dev->net, "timeout waiting for PHY Reset\n");
+ 		return ret;
+ 	}
+@@ -1922,21 +1924,11 @@ static struct sk_buff *smsc95xx_tx_fixup(struct usbnet *dev,
+ 
+ static int smsc95xx_manage_power(struct usbnet *dev, int on)
+ {
+-	struct smsc95xx_priv *pdata = (struct smsc95xx_priv *)(dev->data[0]);
+-
+ 	dev->intf->needs_remote_wakeup = on;
+-
+-	if (pdata->features & FEATURE_REMOTE_WAKEUP)
+-		return 0;
+-
+-	/* this chip revision isn't capable of remote wakeup */
+-	netdev_info(dev->net, "hardware isn't capable of remote wakeup\n");
+-
+ 	if (on)
+ 		usb_autopm_get_interface_no_resume(dev->intf);
+ 	else
+ 		usb_autopm_put_interface(dev->intf);
+-
+ 	return 0;
+ }
+ 
+@@ -1955,95 +1947,10 @@ static const struct driver_info smsc95xx_info = {
+ 
+ static const struct usb_device_id products[] = {
+ 	{
+-		/* SMSC9500 USB Ethernet Device */
+-		USB_DEVICE(0x0424, 0x9500),
+-		.driver_info = (unsigned long) &smsc95xx_info,
+-	},
+-	{
+-		/* SMSC9505 USB Ethernet Device */
+-		USB_DEVICE(0x0424, 0x9505),
+-		.driver_info = (unsigned long) &smsc95xx_info,
+-	},
+-	{
+-		/* SMSC9500A USB Ethernet Device */
+-		USB_DEVICE(0x0424, 0x9E00),
+-		.driver_info = (unsigned long) &smsc95xx_info,
+-	},
+-	{
+-		/* SMSC9505A USB Ethernet Device */
+-		USB_DEVICE(0x0424, 0x9E01),
+-		.driver_info = (unsigned long) &smsc95xx_info,
+-	},
+-	{
+ 		/* SMSC9512/9514 USB Hub & Ethernet Device */
+ 		USB_DEVICE(0x0424, 0xec00),
+ 		.driver_info = (unsigned long) &smsc95xx_info,
+ 	},
+-	{
+-		/* SMSC9500 USB Ethernet Device (SAL10) */
+-		USB_DEVICE(0x0424, 0x9900),
+-		.driver_info = (unsigned long) &smsc95xx_info,
+-	},
+-	{
+-		/* SMSC9505 USB Ethernet Device (SAL10) */
+-		USB_DEVICE(0x0424, 0x9901),
+-		.driver_info = (unsigned long) &smsc95xx_info,
+-	},
+-	{
+-		/* SMSC9500A USB Ethernet Device (SAL10) */
+-		USB_DEVICE(0x0424, 0x9902),
+-		.driver_info = (unsigned long) &smsc95xx_info,
+-	},
+-	{
+-		/* SMSC9505A USB Ethernet Device (SAL10) */
+-		USB_DEVICE(0x0424, 0x9903),
+-		.driver_info = (unsigned long) &smsc95xx_info,
+-	},
+-	{
+-		/* SMSC9512/9514 USB Hub & Ethernet Device (SAL10) */
+-		USB_DEVICE(0x0424, 0x9904),
+-		.driver_info = (unsigned long) &smsc95xx_info,
+-	},
+-	{
+-		/* SMSC9500A USB Ethernet Device (HAL) */
+-		USB_DEVICE(0x0424, 0x9905),
+-		.driver_info = (unsigned long) &smsc95xx_info,
+-	},
+-	{
+-		/* SMSC9505A USB Ethernet Device (HAL) */
+-		USB_DEVICE(0x0424, 0x9906),
+-		.driver_info = (unsigned long) &smsc95xx_info,
+-	},
+-	{
+-		/* SMSC9500 USB Ethernet Device (Alternate ID) */
+-		USB_DEVICE(0x0424, 0x9907),
+-		.driver_info = (unsigned long) &smsc95xx_info,
+-	},
+-	{
+-		/* SMSC9500A USB Ethernet Device (Alternate ID) */
+-		USB_DEVICE(0x0424, 0x9908),
+-		.driver_info = (unsigned long) &smsc95xx_info,
+-	},
+-	{
+-		/* SMSC9512/9514 USB Hub & Ethernet Device (Alternate ID) */
+-		USB_DEVICE(0x0424, 0x9909),
+-		.driver_info = (unsigned long) &smsc95xx_info,
+-	},
+-	{
+-		/* SMSC LAN9530 USB Ethernet Device */
+-		USB_DEVICE(0x0424, 0x9530),
+-		.driver_info = (unsigned long) &smsc95xx_info,
+-	},
+-	{
+-		/* SMSC LAN9730 USB Ethernet Device */
+-		USB_DEVICE(0x0424, 0x9730),
+-		.driver_info = (unsigned long) &smsc95xx_info,
+-	},
+-	{
+-		/* SMSC LAN89530 USB Ethernet Device */
+-		USB_DEVICE(0x0424, 0x9E08),
+-		.driver_info = (unsigned long) &smsc95xx_info,
+-	},
+ 	{ },		/* END */
+ };
+ MODULE_DEVICE_TABLE(usb, products);
+@@ -2057,7 +1964,7 @@ static struct usb_driver smsc95xx_driver = {
+ 	.reset_resume	= smsc95xx_resume,
+ 	.disconnect	= usbnet_disconnect,
+ 	.disable_hub_initiated_lpm = 1,
+-	.supports_autosuspend = 1,
++	.supports_autosuspend = 0,
+ };
+ 
+ module_usb_driver(smsc95xx_driver);
+diff --git a/fs/namespace.c b/fs/namespace.c
+index e945b81..da3eff2 100644
+--- a/fs/namespace.c
++++ b/fs/namespace.c
+@@ -2243,9 +2243,9 @@ long do_mount(const char *dev_name, const char *dir_name,
+ 	if (retval)
+ 		goto dput_out;
+ 
+-	/* Default to relatime unless overriden */
+-	if (!(flags & MS_NOATIME))
+-		mnt_flags |= MNT_RELATIME;
++	/* Default to noatime unless overriden */
++	if (!(flags & MS_RELATIME))
++		mnt_flags |= MNT_NOATIME;
+ 
+ 	/* Separate the per-mountpoint flags */
+ 	if (flags & MS_NOSUID)
+diff --git a/net/ipv4/ipconfig.c b/net/ipv4/ipconfig.c
+index bf6c5cf..6564b5bc 100644
+--- a/net/ipv4/ipconfig.c
++++ b/net/ipv4/ipconfig.c
+@@ -88,7 +88,7 @@
+ #endif
+ 
+ /* Define the friendly delay before and after opening net devices */
+-#define CONF_POST_OPEN		10	/* After opening: 10 msecs */
++#define CONF_POST_OPEN		1	/* After opening: 1 msecs */
+ #define CONF_CARRIER_TIMEOUT	120000	/* Wait for carrier timeout */
+ 
+ /* Define the timeout for waiting for a DHCP/BOOTP/RARP reply */
