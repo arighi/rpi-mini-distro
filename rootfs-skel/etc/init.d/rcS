@@ -19,7 +19,7 @@ echo eth0 is up > /dev/kmsg
 
 ifconfig eth0 up $IP
 touch /var/log/lastlog
-dropbear -E
+dropbear -E &>/var/log/dropbear.log
 
 echo init done > /dev/kmsg
 

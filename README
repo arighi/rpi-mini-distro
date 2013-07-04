@@ -1,0 +1,28 @@
+RPi mini distro
+
+== How to build this distro ==
+
+$ ./build.sh 192.168.1.105
+
+== Steps to install this distro ==
+
+# Boot partition
+$ sudo mkfs.vfat /dev/mmcblk0p1
+$ sudo mount /dev/mmcblk0p1 /mnt
+$ sudo cp -f firmware/boot/* /mnt
+$ sudo cp -f kernel.img /mnt/
+$ sudo cp -f cfg/cmdline.txt /mnt
+$ sudo umount /mnt
+
+# rootfs partition
+sudo dd if=rootfs.img of=/dev/mmcblk0p2 bs=1M oflag=direct
+
+== Ready to test! ==
+
+Boot your RPi board with the new flashed SD card. Now you can ssh login into
+the board with:
+
+$ ssh root@192.168.1.105
+
+Passwordless login should work if you have a public ssh key in
+~/.ssh/id_dsa.pub, otherwise the default root password is "raspberry".
