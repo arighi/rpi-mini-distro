@@ -1,0 +1,29 @@
+#!/bin/sh
+
+IP=192.168.1.105
+
+echo init start > /dev/kmsg
+
+ifconfig lo up 127.0.0.1 netmask 255.0.0.0
+
+mount -t proc none /proc
+mount -t sysfs none /sys
+mount -t tmpfs none /var/log
+
+echo waiting eth0 to come up > /dev/kmsg
+while :; do
+	grep -q eth0 /proc/net/dev && break
+	usleep 1
+done
+echo eth0 is up > /dev/kmsg
+
+ifconfig eth0 up $IP
+touch /var/log/lastlog
+dropbear -E
+
+echo init done > /dev/kmsg
+
+# sleep forever
+while :; do
+	read
+done

@@ -1,0 +1,4 @@
+export PATH="$PATH:/bin:/sbin:/usr/bin:/usr/sbin:."
+export SHELL="/bin/sh"
+export TERM=linux
+export PS1="# "

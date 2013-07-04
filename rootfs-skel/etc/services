@@ -1,0 +1,3 @@
+ssh		22/tcp
+ssh		22/udp
+syslog		514/udp
